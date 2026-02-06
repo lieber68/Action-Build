@@ -50,7 +50,7 @@ on:
           - oneplus_pad2_mt6991_b
           - oneplus_ace_6
           - oneplus_ace_6t
-          - oneplus_ace_6t_aoap
+          - oneplus_ace_6t_aosp
           - oneplus_15r
           - oneplus_15r_aosp
           - oneplus_15
@@ -1014,6 +1014,9 @@ jobs:
 
           # 从 build.config.common 读取 CLANG_PREBUILT_BIN
           CLANG_PREBUILT_BIN=$(grep '^CLANG_PREBUILT_BIN=' ./common/build.config.common | cut -d'=' -f2 || true)
+          if [[ "${CPU}" == sm8845 ]]; then
+            CLANG_PREBUILT_BIN=$(grep '^CLANG_PREBUILT_BIN=' ./soc-repo/build.config.common | cut -d'=' -f2 || true)
+          fi
           if [[ -z "$CLANG_PREBUILT_BIN" ]]; then
             echo "⚠️ CLANG_PREBUILT_BIN 未在 build.config.common 中找到，回退至官方构建脚本"
             echo "fallback=true" >> "$GITHUB_OUTPUT"
@@ -1053,13 +1056,14 @@ jobs:
               RUSTC_VERSION="$RUSTC_NEW_VERSION"
             fi
           fi
-          RUSTC_BIN="$(pwd)/prebuilts/rust/linux-x86/$RUSTC_VERSION/bin/rustc"
 
+          echo "----------------"
           echo "✅ CLANG_VERSION=$CLANG_VERSION"
           echo "✅ CLANG_DIR=$CLANG_DIR"
           echo "✅ CLANG_PATH=$CLANG_PATH"
           echo "✅ USE_LLVM_IAS=$USE_LLVM_IAS"
           echo "✅ RUSTC_VERSION=$RUSTC_VERSION"
+          echo "----------------"
 
           export PATH="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$CLANG_PREBUILT_BIN:$PATH"
           export PATH="/usr/lib/ccache:$PATH"
@@ -1072,7 +1076,7 @@ jobs:
             LLVM=1
             ARCH=arm64
             CROSS_COMPILE=aarch64-linux-gnu-
-            RUSTC=$RUSTC_BIN
+            RUSTC=../../prebuilts/rust/linux-x86/$RUSTC_VERSION/bin/rustc
             PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole
             LD=ld.lld
             HOSTLD=ld.lld
