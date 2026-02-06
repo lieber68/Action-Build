@@ -657,7 +657,7 @@ jobs:
           )
 
           awk -v def="$VERSION_DEFINITIONS" '
-            /REPO_OWNER :=/ {print; print def; inserted=1; next}
+            /REPO_NAME :=/ {print; print def; inserted=1; next}
             1
             END {if (!inserted) print def}
           ' kernel/Kbuild > kernel/Kbuild.tmp && mv kernel/Kbuild.tmp kernel/Kbuild
@@ -666,7 +666,7 @@ jobs:
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
 
           echo "::group::最终 Kbuild 中版本信息及部分调试结果预览"
-          grep -A10 "REPO_OWNER" kernel/Kbuild
+          grep -A10 "REPO_NAME" kernel/Kbuild
           grep "KSU_VERSION_FULL" kernel/Kbuild
           echo "::endgroup::"
 
@@ -1045,27 +1045,21 @@ jobs:
           # 获取 CLANG_PREBUILT_BIN 的上一级目录名，赋值给 CLANG_PATH
           CLANG_PATH=$(basename "$(dirname "$CLANG_PREBUILT_BIN")")
 
-          # 搜索 rustc
-          RUSTC_BIN=""
-          for base in prebuilts prebuilts-master; do
-            [ -d "$base/rust/linux-x86" ] || continue
-            latest=$(ls -d "$base/rust/linux-x86"/1.* 2>/dev/null | sort -V | tail -n1)
-            if [ -x "$latest/bin/rustc" ]; then
-              RUSTC_BIN="$(pwd)/$latest/bin/rustc"
-              break
+          # 从 build.config.constants 读取 RUSTC_VERSION
+          RUSTC_VERSION="1.73.0b"
+          if [[ -f ./common/build.config.constants ]]; then
+            RUSTC_NEW_VERSION=$(grep '^RUSTC_VERSION=' ./common/build.config.constants | cut -d'=' -f2 || true)
+            if [[ -n "$RUSTC_NEW_VERSION" ]]; then
+              RUSTC_VERSION="$RUSTC_NEW_VERSION"
             fi
-          done
-
-          if [ -z "$RUSTC_BIN" ]; then
-            echo "⚠️ 未在 kernel_platform/prebuilts 中找到可用 rustc，使用默认值"
-            RUSTC_BIN="$(pwd)/prebuilts/rust/linux-x86/1.73.0b/bin/rustc"
           fi
+          RUSTC_BIN="$(pwd)/prebuilts/rust/linux-x86/$RUSTC_VERSION/bin/rustc"
 
           echo "✅ CLANG_VERSION=$CLANG_VERSION"
           echo "✅ CLANG_DIR=$CLANG_DIR"
           echo "✅ CLANG_PATH=$CLANG_PATH"
           echo "✅ USE_LLVM_IAS=$USE_LLVM_IAS"
-          echo "✅ RUSTC=$RUSTC_BIN"
+          echo "✅ RUSTC_VERSION=$RUSTC_VERSION"
 
           export PATH="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$CLANG_PREBUILT_BIN:$PATH"
           export PATH="/usr/lib/ccache:$PATH"
