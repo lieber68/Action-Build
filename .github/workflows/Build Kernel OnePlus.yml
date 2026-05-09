@@ -476,7 +476,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/kernel_workspace/.thinlto-cache
-          key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.KERNEL_VERSION }}-16.8
+          key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-16.8
 
       - name: Initialize Ccache
         if: ${{ github.event.inputs.BUILD_NOCCACHE == 'false' }}
@@ -942,6 +942,17 @@ jobs:
 
           echo "为 oplus_bsp_midas 模块返回幽灵任务以避免空指针崩溃..."
           patch -p1 --forward < "${PATCH_DIR}/ghost-task-for-midas.patch" || true
+          echo "拓展 ntsync 支持..."
+          if [ "$KMI" = "android16-6.12" ]; then
+            rm -f include/uapi/linux/ntsync.h
+            rm -f drivers/misc/ntsync.c
+          fi
+          patch -p1 --forward < "${PATCH_DIR}/ntsync/ntsync_base.patch" || true
+          if [[ "$FILE" == oneplus_10r* || "$FILE" == "oneplus_ace_race_v" ]]; then
+            patch -p1 --forward < "${PATCH_DIR}/ntsync/ntsync_compat_android12-5.10_14.patch" || true
+          else
+            patch -p1 --forward < "${PATCH_DIR}/ntsync/ntsync_compat_$([ -f "${PATCH_DIR}/ntsync/ntsync_compat_${KMI}_${ANDROID_SHORT_VERSION}.patch" ] && echo "${KMI}_${ANDROID_SHORT_VERSION}" || echo "${KMI}").patch" || true
+          fi
 
       - name: Apply LZ4_DEV
         if: ${{ github.event.inputs.LZ4_UPDATE == 'true' }}
@@ -1183,9 +1194,12 @@ jobs:
 
           # DROID_SPACES配置*
           if [ "${{ github.event.inputs.DROID_SPACES }}" = "true" ]; then
+            echo "CONFIG_NTSYNC=y" >> "$CONFIG_FILE"
             echo "CONFIG_SYSVIPC=y" >> "$CONFIG_FILE"
             echo "CONFIG_DEVTMPFS=y" >> "$CONFIG_FILE"
             echo "CONFIG_PID_NS=y" >> "$CONFIG_FILE"
+            echo "CONFIG_IPC_NS=y" >> "$CONFIG_FILE"
+            echo "CONFIG_NAMESPACES=y" >> "$CONFIG_FILE"
             echo "CONFIG_POSIX_MQUEUE=y" >> "$CONFIG_FILE"
             echo "CONFIG_NETFILTER_XT_TARGET_REJECT=y" >> "$CONFIG_FILE"
             echo "CONFIG_NETFILTER_XT_TARGET_LOG=y" >> "$CONFIG_FILE"
@@ -1193,8 +1207,8 @@ jobs:
           fi
 
           # IPSET & IPv6_NAT配置*
-          if [[ "${CPU}" == sm* && "${{ github.event.inputs.NETFILTER }}" == "true" ]]; then
-            if [[ "$KERNEL_VERSION" != "6.12" ]]; then
+          if [ "${{ github.event.inputs.NETFILTER }}" = "true" ]; then
+            if [[ "$KERNEL_VERSION" != "6.12" && "${CPU}" != mt* ]]; then
               echo "CONFIG_BPF_STREAM_PARSER=y" >> "$CONFIG_FILE"
             fi
             echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "$CONFIG_FILE"
@@ -1222,7 +1236,7 @@ jobs:
           fi
 
           # 修复构建问题
-          if [ "$KERNEL_VERSION" = "6.1" ] && [[ "$CPU" == mt* ]]; then
+          if [[ "$KERNEL_VERSION" == "6.1" && "${CPU}" == mt* ]]; then
             echo "CONFIG_DEBUG_INFO_BTF=n" >> "$CONFIG_FILE"
           fi
           if [[ "$ENABLE_RUST" == "true" ]]; then
