@@ -440,6 +440,27 @@ jobs:
             echo "::warning title=Source Warning::您使用的内核编译地址为非官方源，可能导致运行失败或内核异常。"
           fi
 
+      - name: Reject Check
+        run: |
+          cat > /tmp/check_rejects.sh << 'EOF'
+          check_rejects() {
+            local SEARCH_DIR="${1:-.}"
+            REJECT_FILES=$(find "$SEARCH_DIR" -name "*.rej" 2>/dev/null)
+            if [ -z "$REJECT_FILES" ]; then
+              return 0
+            fi
+            while IFS= read -r REJ_FILE; do
+              ORIG_FILE="${REJ_FILE%.rej}"
+              ORIG_FILE="${ORIG_FILE#./}"
+              echo "::group::❌ 补丁在 ${ORIG_FILE} 出现 hunk FAILED，点击查看具体信息"
+              cat "$REJ_FILE"
+              echo "::endgroup::"
+            done <<< "$REJECT_FILES"
+          }
+          EOF
+          chmod +x /tmp/check_rejects.sh
+          echo "REJ_CHECKER=/tmp/check_rejects.sh" >> $GITHUB_ENV
+
       - name: Restore APT Cache
         id: apt-cache
         uses: actions/cache@v5
@@ -863,11 +884,8 @@ jobs:
             fi
           fi
 
-          if [ -f fs/namespace.c.rej ]; then
-            echo "::group::❌ 补丁在 fs/namespace.c 出现 hunk FAILED，点击查看具体信息"
-            cat fs/namespace.c.rej
-            echo "::endgroup::"
-          fi
+          source $REJ_CHECKER
+          check_rejects .
 
       # OGKI转换GKI，无需修改 dtbo 开机
       - name: Apply Convert HMBIRD_OGKI to HMBIRD_GKI
@@ -885,6 +903,8 @@ jobs:
           echo "正在打OGKI转换GKI补丁"
           patch -p1 -F 3 < "${PATCH_DIR}/hmbird_patch.patch" || true
           echo "OGKI转换GKI_patch完成"
+          source $REJ_CHECKER
+          check_rejects .
 
       - name: Apply UNICODE_BYPASS
         if: ${{ github.event.inputs.UNICODE_BYPASS == 'true' }}
@@ -896,6 +916,8 @@ jobs:
           else
             patch -p1 --forward < "${PATCH_DIR}/unicode_bypass_fix_6.1+.patch" || true
           fi
+          source $REJ_CHECKER
+          check_rejects .
 
       - name: Apply RE_KERNEL
         if: ${{ github.event.inputs.RE_KERNEL == 'true' }}
@@ -909,6 +931,8 @@ jobs:
           sed -i "s|^\s*//\s*#define KERNEL_${KERNEL_SHORT_PATCH_VERSION}|\#define KERNEL_${KERNEL_SHORT_PATCH_VERSION}|" drivers/rekernel/rekernel.h
 
       - name: Apply DROID_SPACES
+        env:
+          FILE: ${{ github.event.inputs.FILE }}
         if: ${{ github.event.inputs.DROID_SPACES == 'true' }}
         run: |
           PATCH_DIR="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/patches"
@@ -953,6 +977,8 @@ jobs:
           else
             patch -p1 --forward < "${PATCH_DIR}/ntsync/ntsync_compat_$([ -f "${PATCH_DIR}/ntsync/ntsync_compat_${KMI}_${ANDROID_SHORT_VERSION}.patch" ] && echo "${KMI}_${ANDROID_SHORT_VERSION}" || echo "${KMI}").patch" || true
           fi
+          source $REJ_CHECKER
+          check_rejects .
 
       - name: Apply LZ4_DEV
         if: ${{ github.event.inputs.LZ4_UPDATE == 'true' }}
@@ -1078,6 +1104,8 @@ jobs:
           echo "正在打lz4k_oplus补丁"
           patch -p1 -F 3 < "${PATCH_DIR}/lz4k_oplus.patch" || true
           echo 'lz4k_oplus_patch完成'
+          source $REJ_CHECKER
+          check_rejects .
 
       - name: Apply SCHED_HMBIRD
         env:
@@ -1100,6 +1128,8 @@ jobs:
             dos2unix "fengchi_${CLEAN_FILE}.patch"
             patch -p1 -F 3 < "fengchi_${CLEAN_FILE}.patch"
             echo "fengchi_patch完成"
+            source $REJ_CHECKER
+            check_rejects .
           else
             echo "❌ 未匹配到补丁，风驰内核暂未支持你的机型，请关闭后重试"
             exit 12

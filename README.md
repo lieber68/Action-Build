@@ -62,7 +62,7 @@
 >
 >|| 平均耗时范围|最大耗时|
 >|------------------|----------------------|------------|
->| `极速构建所有机型` | `1st:17min ~ 35min 2nd:6min ~ 17min` | `32min`|
+>| `极速构建所有机型` | `1st:17min ~ 36min 2nd:6min ~ 17min` | `40/29min`|
 >| `内核版本5.10-5.15使用官方脚本构建` | `29min ~ 35min`| `45min`    |
 >| `内核版本6.1-6.12使用官方脚本构建` | `59min ~ 1h12min`| `1h28min` |
 >
@@ -88,8 +88,7 @@
 ------
  
 # 开发中的功能
-- [x] ~ccache支持AB更新模式~ (ccache-ECS和其他代码逻辑已经基本完成此功能实现)
-- [ ] LXC/Docker 功能支持以及部分设备DROIDSPACES异常修复
+- [ ] Kexec内核热切换支持
 - [ ] LZ4跟随上游自动升级，[#178](https://github.com/Numbersf/Action-Build/pull/178)
 - [ ] 全内核版本风驰支持
 - 牙膏要一点一点挤,显卡要一刀一刀切,PPT要一张一张放,代码要一行一行写,更多功能及优化...敬请期待....
@@ -97,7 +96,7 @@
 # 更新日志
 >小的更新内容将被忽略 更多内容请参看提交
  
-- 初步适配`DROIDSPACES`  
+- 完整适配`DroidSpaces`+`ntsync`  
  
 - 完整适配`Re:Kernel`,自动跟随上游  
  
@@ -117,7 +116,7 @@
  
 - 支持修改`SUSFS`哈希值进行回退(此项输入`-1`则关闭`SUSFS`)、调用`SUSFS-DEV`开发分支  
  
-- 内核版本为``6.6-6.12``支持将设备树中的`type`属性从`HMBIRD_OGKI`替换为`HMBIRD_GKI`;支持开启风驰驱动[@reigadegr](https://github.com/reigadegr) [@cctv18](https://github.com/cctv18) [@Numbersf](https://github.com/Numbersf) [@HanKuCha](https://github.com/HanKuCha)  
+- 内核版本为`6.6-6.12`支持将设备树中的`type`属性从`HMBIRD_OGKI`替换为`HMBIRD_GKI`;支持开启风驰驱动[@reigadegr](https://github.com/reigadegr) [@cctv18](https://github.com/cctv18) [@Numbersf](https://github.com/Numbersf) [@HanKuCha](https://github.com/HanKuCha)  
  
 - 允许调用第三方动态源码清单仓库,以支持原本不兼容的机型。必须确保源码清单与频道分支的命名符合规范。在第三方清单仓库的`README.md`中,如未定义`CPUD`,可填写任意占位值。此外,极速构建必须保持启用,不可关闭  
  
@@ -145,7 +144,7 @@ v3.1.7-自定义内容@builtin[f5541e21]
  
 - 首发支持全机型、全编译方式自定义内核构建时间`UTS_VERSION`  
  
-- 使用`ccache`加速工作流,仅开启极速构建`fast build`有效,第一次使用、重大更新需要换`key`要重新生成`cache`,可能会降低速度  
+- 使用`ccache-ECS`、`ltothin-cache`、`apt-cache`共同加速工作流,仅开启极速构建`fast build`有效,第一次使用、重大更新需要换`key`要重新生成`cache`,可能会降低速度  
 ```
 你可以通过使用delete.yml(name: Workflow and Cache Cleanup)工作流开启“是否删除所有缓存”的选项来删除所有的key
 也可以去
@@ -173,11 +172,11 @@ https://github.com/你的用户名(username)/你的仓库名/actions/caches
  
 - 支持显示自己填入的内容在`Debug Show Selected Inputs`这一步,同时工作流名称也可以看到一些东西  
  
-- 从写入 `Anykernel3.zip` 的配置文件后缀中删除潜在的版本代码,替换成精确的 `Android` 版本号`XX.X.X`
+- 从写入 `Anykernel3.zip` 的配置文件后缀中删除潜在的版本代码,替换成精确的 `Android` 版本号`XX.X.(X)`
 ```
-AnyKernel3_ReSukiSU_12896_OnePlusAce2Pro_Android15.0.0_KPM_VFS.zip
-AnyKernel3_ReSukiSU_12896_OnePlus13_Android15.0.2_KPM_VFS.zip
-AnyKernel3_ReSukiSU_12896_OnePlus11_Android14.1.0_KPM_VFS.zip
+AnyKernel3_ReSukiSU_34895_OnePlusAce2Pro_Android16.0.0(5.15.180)_KPM_BBG_ILH_DS_REKER.zip
+AnyKernel3_ReSukiSU_34895_OnePlus11_Android14.1.0(5.15.123)_KPM_BBG_ILH_DS_REKER.zip
+AnyKernel3_ReSukiSU_34895_OnePlus15(AOSP)_Android16.0.0(6.12.23)_KPM_BBG_ILH_DS_REKER.zip
 ```  
  
 - 添加 `zram` 模块的 `LZ4K、LZ4KD` 压缩算法支持[@ShirkNeko](https://github.com/ShirkNeko)  
