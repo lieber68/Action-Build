@@ -106,7 +106,7 @@ on:
         type: string
         description: "分支名(必填)/自定义版本标识(留空不修改)/回退分支提交哈希版本(留空不修改)"
         required: false
-        default: "main/Numbersf/"
+        default: "dev/Numbersf/"
       LZ4_UPDATE:
         type: boolean
         description: "是否升级LZ4到上游最新？"
@@ -713,7 +713,7 @@ jobs:
               ARTIFACT="Spoofed-Manager-release"
               ;;
             MD3|*)
-              BRANCH="main"
+              BRANCH="dev"
               ARTIFACT="Manager-release"
               ;;
           esac
@@ -849,6 +849,14 @@ jobs:
                 fake_patched=1
               fi
             fi
+            memory_fake_patched=0
+            if [ "$KMI" = "android13-5.15" ]; then
+              if grep -qxF '#include <linux/swap_slots.h>' ./mm/memory.c && ! grep -qF '#include <linux/susfs_def.h>' ./mm/memory.c; then
+                echo "临时移除 swap_slots.h 以修复 mm/memory.c hunk"
+                sed -i '/#include <linux\/swap_slots\.h>/d' ./mm/memory.c
+                memory_fake_patched=1
+              fi
+            fi
 
             echo "正在打susfs补丁"
             patch -p1 < 50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
@@ -866,6 +874,10 @@ jobs:
                   sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
                 fi
               fi
+            fi
+            if [ "$memory_fake_patched" = 1 ]; then
+              sed -i '/#ifdef CONFIG_KSU_SUSFS_SUS_MAP/i #include <linux/swap_slots.h>' ./mm/memory.c
+              echo "已还原 swap_slots.h"
             fi
           fi
 
