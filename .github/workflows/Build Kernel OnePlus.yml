@@ -106,7 +106,7 @@ on:
         type: string
         description: "分支名(必填)/自定义版本标识(留空不修改)/回退分支提交哈希版本(留空不修改)"
         required: false
-        default: "dev/Numbersf/"
+        default: "main/Numbersf/"
       LZ4_UPDATE:
         type: boolean
         description: "是否升级LZ4到上游最新？"
@@ -713,7 +713,7 @@ jobs:
               ARTIFACT="Spoofed-Manager-release"
               ;;
             MD3|*)
-              BRANCH="dev"
+              BRANCH="main"
               ARTIFACT="Manager-release"
               ;;
           esac
@@ -822,6 +822,10 @@ jobs:
           if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             # Fake Patch to fix failures
             fake_patched=0
+            fake_patched_dist=0
+            fake_patched_swap=0
+            fake_patched_ns=0
+            fake_patched_expand=0
             if [ "$KMI" = "android15-6.6" ]; then
               if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
                 echo "未找到 nr_subpages，正在进行补丁修复"
@@ -831,6 +835,21 @@ jobs:
               if ! grep -qxF '#include <linux/dma-buf.h>' ./fs/proc/base.c; then
                 echo "未找到 #include <linux/dma-buf.h>，添加缺失的头文件"
                 sed -i '/#include <linux\/cpufreq_times.h>/a #include <linux\/dma-buf.h>' ./fs/proc/base.c
+              fi
+              if ! grep -qxF '#include <linux/zswap.h>' ./mm/memory.c; then
+                echo "未找到 #include <linux/zswap.h>，添加缺失的头文件"
+                sed -i '/#include <linux\/sched\/sysctl\.h>/a #include <linux\/zswap.h>' ./mm/memory.c
+                fake_patched_swap=1
+              fi
+              if ! grep -qxF '#include <trace/hooks/fs.h>' ./fs/namespace.c && ! grep -qxF 'susfs_def.h' ./fs/namespace.c; then
+                echo "未找到 #include <trace/hooks/fs.h>，添加缺失的头文件"
+                sed -i '/#include <trace\/hooks\/blk\.h>/a #include <trace\/hooks\/fs.h>' ./fs/namespace.c
+                fake_patched_ns=1
+              fi
+              if grep -qF 'if (vma->vm_end > last_vma_end)' ./fs/proc/task_mmu.c && ! grep -qF 'if (vma->vm_end > last_vma_end) {' ./fs/proc/task_mmu.c; then
+                echo "临时展开 last_vma_end if 块，修复匹配问题"
+                perl -i -0pe 's/\t\t\tif \(vma->vm_end > last_vma_end\)\n\t\t\t\tsmap_gather_stats\(vma, &mss, last_vma_end\);/\t\t\tif (vma->vm_end > last_vma_end) {\n\t\t\t\tsmap_gather_stats(vma, \&mss, last_vma_end);\n\t\t\t\tlast_vma_end = vma->vm_end;\n\t\t\t}/' ./fs/proc/task_mmu.c
+                fake_patched_expand=1
               fi
             fi
             if [ "$KMI" = "android14-6.1" ]; then
@@ -849,12 +868,11 @@ jobs:
                 fake_patched=1
               fi
             fi
-            memory_fake_patched=0
             if [ "$KMI" = "android13-5.15" ]; then
-              if grep -qxF '#include <linux/swap_slots.h>' ./mm/memory.c && ! grep -qF '#include <linux/susfs_def.h>' ./mm/memory.c; then
-                echo "临时移除 swap_slots.h 以修复 mm/memory.c hunk"
+              if grep -qxF '#include <linux/swap_slots.h>' ./mm/memory.c && ! grep -qxF '#include <linux/susfs_def.h>' ./mm/memory.c; then
+                echo "发现干扰识别的 swap_slots.h，临时移除"
                 sed -i '/#include <linux\/swap_slots\.h>/d' ./mm/memory.c
-                memory_fake_patched=1
+                fake_patched_dist=1
               fi
             fi
 
@@ -875,9 +893,31 @@ jobs:
                 fi
               fi
             fi
-            if [ "$memory_fake_patched" = 1 ]; then
-              sed -i '/#ifdef CONFIG_KSU_SUSFS_SUS_MAP/i #include <linux/swap_slots.h>' ./mm/memory.c
-              echo "已还原 swap_slots.h"
+            if [ "$fake_patched_dist" = 1 ]; then
+              if [ "$KMI" = "android13-5.15" ]; then
+                if ! grep -qxF '#include <linux/swap_slots.h>' ./mm/memory.c; then
+                  sed -i '/#ifdef CONFIG_KSU_SUSFS_SUS_MAP/i #include <linux/swap_slots.h>' ./mm/memory.c
+                fi
+              fi
+            fi
+            if [ "$fake_patched_swap" = 1 ]; then
+              if [ "$KMI" = "android15-6.6" ]; then
+                if grep -qxF '#include <linux/zswap.h>' ./mm/memory.c; then
+                  sed -i '/#include <linux\/zswap\.h>/d' ./mm/memory.c
+                fi
+              fi
+            fi
+            if [ "$fake_patched_ns" = 1 ]; then
+              if grep -qxF '#include <trace/hooks/fs.h>' ./fs/namespace.c && ! grep -qxF 'susfs_def.h' ./fs/namespace.c; then
+                sed -i '/#include <trace\/hooks\/fs\.h>/d' ./fs/namespace.c
+              fi
+            fi
+            if [ "$fake_patched_expand" = 1 ]; then
+              if [ "$KMI" = "android15-6.6" ]; then
+                if grep -qF 'if (vma->vm_end > last_vma_end) {' ./fs/proc/task_mmu.c; then
+                  perl -i -0pe 's/\t\t\tif \(vma->vm_end > last_vma_end\) \{\n\t\t\t\tsmap_gather_stats\(vma, &mss, last_vma_end\);\n\t\t\t\tlast_vma_end = vma->vm_end;\n\t\t\t\}/\t\t\tif (vma->vm_end > last_vma_end)\n\t\t\t\tsmap_gather_stats(vma, \&mss, last_vma_end);/' ./fs/proc/task_mmu.c
+                fi
+              fi
             fi
           fi
 
