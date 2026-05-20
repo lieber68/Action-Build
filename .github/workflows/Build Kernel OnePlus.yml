@@ -1291,6 +1291,14 @@ jobs:
             CLANG_PREBUILT_BIN=$(grep '^CLANG_PREBUILT_BIN=' "$f" | cut -d'=' -f2)
             [[ -n "$CLANG_PREBUILT_BIN" ]] && break
           done
+          # Kleaf fallback
+          if [[ -z "$CLANG_PREBUILT_BIN" ]]; then
+            _kleaf_clang=$(grep -rh 'clang-r[0-9a-z]\+' ./build/kernel/kleaf/ ./common/build/kernel/kleaf/ --include='*.bzl' 2>/dev/null | grep -oP 'clang-r[0-9a-z]+' | sort | uniq -c | sort -rn | awk '{print $2; exit}')
+            if [[ -n "$_kleaf_clang" ]]; then
+              _kleaf_prebuilts=$(grep -rh 'prebuilts[^ "'"'"']*clang' ./build/kernel/kleaf/ ./common/build/kernel/kleaf/ --include='*.bzl' 2>/dev/null | grep -oP 'prebuilts[a-z-]*' | sort | uniq -c | sort -rn | awk '{print $2; exit}')
+              CLANG_PREBUILT_BIN="${_kleaf_prebuilts:-prebuilts}/clang/host/linux-x86/${_kleaf_clang}/bin"
+            fi
+          fi
           if [[ -z "$CLANG_PREBUILT_BIN" ]]; then
             echo "⚠️ CLANG_PREBUILT_BIN 未在 build.config.common 中找到，回退至官方构建脚本"
             echo "fallback=true" >> "$GITHUB_OUTPUT"
