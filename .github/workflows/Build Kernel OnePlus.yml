@@ -18,6 +18,7 @@ on:
           - oneplus_11r_b
           - oneplus_ace2_b
           - oneplus_pad_lite_b
+          - oneplus_pad_lite_Canary_b
           - oneplus_pad_mt6983_b
           - oneplus_ace_2v_b
           - oneplus_ace_pro_v
@@ -54,13 +55,13 @@ on:
           - oneplus_ace_6
           - oneplus_turbo_6
           - oneplus_ace_6t
-          - oneplus_ace_6t_aosp
+          - oneplus_ace_6t_Canary
           - oneplus_15r
-          - oneplus_15r_aosp
+          - oneplus_15r_Canary
           - oneplus_15
-          - oneplus_15_aosp
+          - oneplus_15_Canary
           - oneplus_15t
-          - oneplus_15t_aosp
+          - oneplus_15t_Canary
       MANAGER_SOURCE:
         type: choice
         description: "管理器调用方向"
@@ -1284,30 +1285,40 @@ jobs:
             USE_LLVM_IAS=false
           fi
 
-          # 从 build.config.common 读取 CLANG_PREBUILT_BIN
+          # 强制递推路径
+          CLANG_TOOLS_PREBUILT_NAME=$(find "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform" -maxdepth 1 -type d -name 'prebuilts*' -exec test -d '{}/clang-tools' \; -print | head -1)
+          if [[ -n "$CLANG_TOOLS_PREBUILT_NAME" ]]; then
+            CLANG_TOOLS_PREBUILT_NAME="$(basename "$CLANG_TOOLS_PREBUILT_NAME")/clang-tools"
+          else
+            CLANG_TOOLS_PREBUILT_NAME=$(find "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform" -maxdepth 1 -type d -name 'prebuilts*' -exec test -d '{}/clang/host/linux-x86' \; -print | head -1)
+            CLANG_TOOLS_PREBUILT_NAME="$(basename "$CLANG_TOOLS_PREBUILT_NAME")/clang"
+          fi
+          echo "CLANG_TOOLS_PREBUILT_NAME=$CLANG_TOOLS_PREBUILT_NAME"
+
+          KERNEL_BUILD_TOOLS_PREBUILT_NAME=$(find "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform" -maxdepth 1 -type d -name 'prebuilts*' -exec test -d '{}/kernel-build-tools' \; -print | head -1)
+          KERNEL_BUILD_TOOLS_PREBUILT_NAME=$(basename "${KERNEL_BUILD_TOOLS_PREBUILT_NAME:-}")
+          echo "KERNEL_BUILD_TOOLS_PREBUILT_NAME=$KERNEL_BUILD_TOOLS_PREBUILT_NAME"
+
+          if [[ "$ENABLE_RUST" == "true" ]]; then
+            RUST_TOOLS_PREBUILT_NAME=$(find "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform" -maxdepth 1 -type d -name 'prebuilts*' -exec test -d '{}/rust' \; -print | head -1)
+            RUST_TOOLS_PREBUILT_NAME=$(basename "${RUST_TOOLS_PREBUILT_NAME:-}")
+            echo "RUST_TOOLS_PREBUILT_NAME=$RUST_TOOLS_PREBUILT_NAME"
+          fi
+
+          # 从 build.config.common 读取 CLANG_PREBUILT_BIN，或者用递推路径 fallback
           CLANG_PREBUILT_BIN=""
           for f in ./common/build.config.common ./"$KERNEL_REPOS"/build.config.common; do
             [[ -f "$f" ]] || continue
             CLANG_PREBUILT_BIN=$(grep '^CLANG_PREBUILT_BIN=' "$f" | cut -d'=' -f2)
             [[ -n "$CLANG_PREBUILT_BIN" ]] && break
           done
-          # Kleaf fallback
+
           if [[ -z "$CLANG_PREBUILT_BIN" ]]; then
-            _kleaf_clang=$(grep -rh 'clang-r[0-9a-z]\+' ./build/kernel/kleaf/ ./common/build/kernel/kleaf/ --include='*.bzl' 2>/dev/null | grep -oP 'clang-r[0-9a-z]+' | sort | uniq -c | sort -rn | awk '{print $2; exit}')
-            if [[ -n "$_kleaf_clang" ]]; then
-              _kleaf_prebuilts=$(grep -rh 'prebuilts[^ "'"'"']*clang' ./build/kernel/kleaf/ ./common/build/kernel/kleaf/ --include='*.bzl' 2>/dev/null | grep -oP 'prebuilts[a-z-]*' | sort | uniq -c | sort -rn | awk '{print $2; exit}')
-              CLANG_PREBUILT_BIN="${_kleaf_prebuilts:-prebuilts}/clang/host/linux-x86/${_kleaf_clang}/bin"
-            fi
-          fi
-          if [[ -z "$CLANG_PREBUILT_BIN" ]]; then
-            echo "⚠️ CLANG_PREBUILT_BIN 未在 build.config.common 中找到，回退至官方构建脚本"
-            echo "fallback=true" >> "$GITHUB_OUTPUT"
-            echo "请考虑关闭 FAST_BUILD 并提交问题"
-            exit 0
+            CLANG_PREBUILT_BIN="${CLANG_TOOLS_PREBUILT_NAME}/host/linux-x86/clang-zakozako/bin"
           fi
 
-          # 优先尝试从 CLANG_PREBUILT_BIN 提取 clang-r
-          if [[ "$CLANG_PREBUILT_BIN" =~ (clang-r[0-9a-z]+) ]]; then
+          # 优先尝试从 CLANG_PREBUILT_BIN 提取 clang-r，去掉 clang-，作为 CLANG_VERSION
+          if [[ "$CLANG_PREBUILT_BIN" =~ clang-(r[0-9a-z]+) ]]; then
             CLANG_VERSION="${BASH_REMATCH[1]}"
           else
             # 如果未匹配到，尝试从 build.config.constants 提取
@@ -1323,39 +1334,27 @@ jobs:
             exit 0
           fi
 
-          # 替换成新的 CLANG_VERSION 值 (rxxxx)
-          CLANG_PREBUILT_BIN=${CLANG_PREBUILT_BIN/\$\{CLANG_VERSION\}/$CLANG_VERSION}
-          # 获取 CLANG_PREBUILT_BIN 的第一个目录名，赋值给 CLANG_PREBUILT_NAME (prebuilts？prebuilts-master？)
-          CLANG_PREBUILT_NAME=$(echo "$CLANG_PREBUILT_BIN" | cut -d'/' -f1)
-          # 获取 CLANG_PREBUILT_BIN 的上一级目录名，赋值给 CLANG_FULL_VNAME (clang-rxxxx)
-          CLANG_FULL_VNAME=$(basename "$(dirname "$CLANG_PREBUILT_BIN")")
+          CLANG_PREBUILT_BIN="${CLANG_PREBUILT_BIN/\$\{CLANG_VERSION\}/$CLANG_VERSION}"
+          CLANG_PREBUILT_BIN="${CLANG_PREBUILT_BIN/clang-zakozako/clang-${CLANG_VERSION}}"
 
-          echo "-----------------------"
           echo "✅ CLANG_PREBUILT_BIN=$CLANG_PREBUILT_BIN"
           echo "✅ CLANG_VERSION=$CLANG_VERSION"
-          echo "✅ CLANG_PREBUILT_NAME=$CLANG_PREBUILT_NAME"
-          echo "✅ CLANG_FULL_VNAME=$CLANG_FULL_VNAME"
           echo "✅ USE_LLVM_IAS=$USE_LLVM_IAS"
-          echo "-----------------------"
 
           set +u
           source "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/build/kernel/_setup_env.sh" 2>/dev/null || true
           set -u
 
           export PATH="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$CLANG_PREBUILT_BIN:$PATH"
-          export LIBCLANG_PATH="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$CLANG_FULL_VNAME/lib"
+          export LIBCLANG_PATH="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/clang-${CLANG_VERSION}/lib"
           export PATH="/usr/lib/ccache:$PATH"
 
           # BINDGEN 检测与 fallback
           if [[ "$ENABLE_RUST" == "true" ]]; then
-            BINDGEN_BIN=""
-            for f in "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/prebuilts/clang-tools/linux-x86/bin/bindgen" "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/prebuilts-master/clang-tools/linux-x86/bin/bindgen"; do
-              [ -x "$f" ] && BINDGEN_BIN="$f" && break
-            done
+            BINDGEN_BIN="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$CLANG_TOOLS_PREBUILT_NAME/linux-x86/bin/bindgen"
             if [ -x "$BINDGEN_BIN" ]; then
               export BINDGEN="$BINDGEN_BIN"
               echo "✅ bindgen exists: $BINDGEN_BIN"
-              echo "✅ BINDGEN version: $($BINDGEN_BIN --version | head -n1)"
             else
               echo "⚠️ prebuilts bindgen 未找到，fallback 到 cargo 安装 bindgen 0.69.5"
               echo "::group::Install bindgen via cargo"
@@ -1366,16 +1365,12 @@ jobs:
               BINDGEN_BIN=$(which bindgen)
               export BINDGEN="$BINDGEN_BIN"
               echo "✅ BINDGEN_BIN (cargo): $BINDGEN_BIN"
-              echo "✅ BINDGEN version: $($BINDGEN_BIN --version | head -n1)"
             fi
           fi
 
           # PAHOLE 检测与 fallback
-          PAHOLE_BIN=""
-          for f in "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/prebuilts/kernel-build-tools/linux-x86/bin/pahole" "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/prebuilts-master/kernel-build-tools/linux-x86/bin/pahole"; do
-            [ -x "$f" ] && PAHOLE_BIN="$f" && break
-          done
-          if [ -z "$PAHOLE_BIN" ]; then
+          PAHOLE_BIN="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$KERNEL_BUILD_TOOLS_PREBUILT_NAME/kernel-build-tools/linux-x86/bin/pahole"
+          if [ ! -x "$PAHOLE_BIN" ]; then
             PAHOLE_BIN="$(which pahole 2>/dev/null)"
             [ -x "$PAHOLE_BIN" ] && echo "⚠️ pahole fallback to PATH: $PAHOLE_BIN"
           fi
@@ -1388,11 +1383,8 @@ jobs:
 
           # RUSTC 检测与 fallback
           if [[ "$ENABLE_RUST" == "true" ]]; then
-            RUSTC_BIN=""
-            for f in "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/prebuilts/rust/linux-x86/$RUSTC_VERSION/bin/rustc" "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/prebuilts-master/rust/linux-x86/$RUSTC_VERSION/bin/rustc"; do
-              [ -x "$f" ] && RUSTC_BIN="$f" && break
-            done
-            if [ -z "$RUSTC_BIN" ]; then
+            RUSTC_BIN="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$RUST_TOOLS_PREBUILT_NAME/rust/linux-x86/$RUSTC_VERSION/bin/rustc"
+            if [ ! -x "$RUSTC_BIN" ]; then
               RUSTC_BIN="$(which rustc 2>/dev/null)"
               [ -x "$RUSTC_BIN" ] && echo "⚠️ rustc fallback to PATH: $RUSTC_BIN"
             fi
