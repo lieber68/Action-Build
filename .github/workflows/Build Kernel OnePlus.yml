@@ -62,6 +62,8 @@ on:
           - oneplus_15_Canary
           - oneplus_15t
           - oneplus_15t_Canary
+          - oneplus_pad_3_pro
+          - oneplus_pad_3_pro_Canary
       MANAGER_SOURCE:
         type: choice
         description: "管理器调用方向"
@@ -177,9 +179,9 @@ on:
         description: "是否停用空间清扫？"
         required: true
         default: false
-      BUILD_NOCCACHE:
+      BUILD_NOCACHE:
         type: boolean
-        description: "是否停用此次Ccache？"
+        description: "是否停用此次缓存？"
         required: true
         default: false
 
@@ -421,7 +423,7 @@ jobs:
           free -h
 
       - name: Set Cache Environment
-        if: ${{ github.event.inputs.BUILD_NOCCACHE == 'false' }}
+        if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' }}
         run: |
           echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.FILE }}" >> $GITHUB_ENV
           mkdir -p "$HOME/.ccache_${{ github.event.inputs.FILE }}"
@@ -488,21 +490,23 @@ jobs:
          sudo cp -f "$LIB_DIR/ccache" /usr/bin/ccache && sudo chmod +x /usr/bin/ccache
 
       - name: Restore Ccache
-        if: ${{ github.event.inputs.BUILD_NOCCACHE == 'false' }}
-        uses: actions/cache@v5
+        if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' }}
+        id: restore-ccache
+        uses: actions/cache/restore@v5
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-16.8
 
       - name: Restore ThinLTO Cache
-        if: ${{ github.event.inputs.BUILD_NOCCACHE == 'false' && github.event.inputs.FAST_BUILD == 'true' }}
-        uses: actions/cache@v5
+        if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' && github.event.inputs.FAST_BUILD == 'true' }}
+        id: restore-thinlto
+        uses: actions/cache/restore@v5
         with:
           path: ${{ github.workspace }}/kernel_workspace/.thinlto-cache
           key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-16.8
 
       - name: Initialize Ccache
-        if: ${{ github.event.inputs.BUILD_NOCCACHE == 'false' }}
+        if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' }}
         run: |
           INIT_FLAG="${{ env.CCACHE_DIR }}/.ccache_initialized"
           if command -v ccache >/dev/null 2>&1; then
@@ -761,7 +765,7 @@ jobs:
           cd kernel_workspace
           if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_META="${{ github.event.inputs.SUSFS_META }}"
-            git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}
+            git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}
             cd susfs4ksu
             if [ -n "$SUSFS_META" ]; then
               if [[ "$SUSFS_META" =~ ^[0-9]+$ ]]; then
@@ -1009,7 +1013,7 @@ jobs:
             rm -f drivers/misc/ntsync.c
           fi
           patch -p1 --forward < "${PATCH_DIR}/ntsync/ntsync_base.patch" || true
-          if [[ "$FILE" == oneplus_10r* || "$FILE" == "oneplus_ace_race_v" ]]; then
+          if [[ "$FILE" == oneplus_10r* ]]; then
             patch -p1 --forward < "${PATCH_DIR}/ntsync/ntsync_compat_android12-5.10_14.patch" || true
           else
             patch -p1 --forward < "${PATCH_DIR}/ntsync/ntsync_compat_$([ -f "${PATCH_DIR}/ntsync/ntsync_compat_${KMI}_${ANDROID_SHORT_VERSION}.patch" ] && echo "${KMI}_${ANDROID_SHORT_VERSION}" || echo "${KMI}").patch" || true
@@ -1293,16 +1297,16 @@ jobs:
             CLANG_TOOLS_PREBUILT_NAME=$(find "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform" -maxdepth 1 -type d -name 'prebuilts*' -exec test -d '{}/clang/host/linux-x86' \; -print | head -1)
             CLANG_TOOLS_PREBUILT_NAME="$(basename "$CLANG_TOOLS_PREBUILT_NAME")/clang"
           fi
-          echo "CLANG_TOOLS_PREBUILT_NAME=$CLANG_TOOLS_PREBUILT_NAME"
+          echo "✅ CLANG_TOOLS_PREBUILT_NAME=$CLANG_TOOLS_PREBUILT_NAME"
 
           KERNEL_BUILD_TOOLS_PREBUILT_NAME=$(find "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform" -maxdepth 1 -type d -name 'prebuilts*' -exec test -d '{}/kernel-build-tools' \; -print | head -1)
           KERNEL_BUILD_TOOLS_PREBUILT_NAME=$(basename "${KERNEL_BUILD_TOOLS_PREBUILT_NAME:-}")
-          echo "KERNEL_BUILD_TOOLS_PREBUILT_NAME=$KERNEL_BUILD_TOOLS_PREBUILT_NAME"
+          echo "✅ KERNEL_BUILD_TOOLS_PREBUILT_NAME=$KERNEL_BUILD_TOOLS_PREBUILT_NAME"
 
           if [[ "$ENABLE_RUST" == "true" ]]; then
             RUST_TOOLS_PREBUILT_NAME=$(find "$GITHUB_WORKSPACE/kernel_workspace/kernel_platform" -maxdepth 1 -type d -name 'prebuilts*' -exec test -d '{}/rust' \; -print | head -1)
             RUST_TOOLS_PREBUILT_NAME=$(basename "${RUST_TOOLS_PREBUILT_NAME:-}")
-            echo "RUST_TOOLS_PREBUILT_NAME=$RUST_TOOLS_PREBUILT_NAME"
+            echo "✅ RUST_TOOLS_PREBUILT_NAME=$RUST_TOOLS_PREBUILT_NAME"
           fi
 
           # 从 build.config.common 读取 CLANG_PREBUILT_BIN，或者用递推路径 fallback
@@ -1317,7 +1321,7 @@ jobs:
             CLANG_PREBUILT_BIN="${CLANG_TOOLS_PREBUILT_NAME}/host/linux-x86/clang-zakozako/bin"
           fi
 
-          # 优先尝试从 CLANG_PREBUILT_BIN 提取 clang-r，去掉 clang-，作为 CLANG_VERSION
+          # 优先尝试从 CLANG_PREBUILT_BIN 识别出 clang-r，再去掉 clang-，作为 CLANG_VERSION
           if [[ "$CLANG_PREBUILT_BIN" =~ clang-(r[0-9a-z]+) ]]; then
             CLANG_VERSION="${BASH_REMATCH[1]}"
           else
@@ -1396,13 +1400,19 @@ jobs:
             fi
           fi
 
-          LDCACHE_DIR="${GITHUB_WORKSPACE}/kernel_workspace/.thinlto-cache"
-          mkdir -p "$LDCACHE_DIR"
-          LD_WRAPPER="${GITHUB_WORKSPACE}/kernel_workspace/ld-wrapper"
-          printf '#!/bin/bash\nexec ld.lld "$@" --thinlto-cache-dir="%s" --thinlto-cache-policy=cache_size_bytes=3g --thinlto-jobs=%s\n' \
-            "$LDCACHE_DIR" "$(nproc --all)" > "$LD_WRAPPER"
-          chmod +x "$LD_WRAPPER"
-          echo "✅ ld-wrapper 已创建: $LD_WRAPPER (cache=$LDCACHE_DIR)"
+          LD_WRAPPER=""
+          if [ "${{ github.event.inputs.BUILD_NOCACHE }}" = "false" ] && [[ "$KERNEL_VERSION" == 5.* ]]; then
+            LDCACHE_DIR="${GITHUB_WORKSPACE}/kernel_workspace/.thinlto-cache"
+            mkdir -p "$LDCACHE_DIR"
+            LD_WRAPPER="${GITHUB_WORKSPACE}/kernel_workspace/ld-wrapper"
+            LLD_BIN="$(command -v ld.lld)"
+            if [[ -z "$LLD_BIN" ]]; then
+              echo "⚠️ ld.lld 未找到，无法创建 ld-wrapper"
+            fi
+            printf '#!/bin/bash\nexec "%s" "$@" --thinlto-cache-dir="%s" --thinlto-cache-policy=cache_size_bytes=3g --thinlto-jobs=%s\n' "$LLD_BIN" "$LDCACHE_DIR" "$(nproc --all)" > "$LD_WRAPPER"
+            chmod +x "$LD_WRAPPER"
+            echo "✅ ld-wrapper 已创建: $LD_WRAPPER (lld=$LLD_BIN, cache=$LDCACHE_DIR)"
+          fi
 
           cd ./common
 
@@ -1423,23 +1433,27 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu-
             CC="ccache clang"
             HOSTCC="ccache clang"
-            LD="$LD_WRAPPER"
             HOSTLD=ld.lld
             PAHOLE="$PAHOLE_BIN"
             KCFLAGS="$KCFLAGS"
           )
 
+          if [[ -n "$LD_WRAPPER" ]]; then
+            MAKE_ARGS+=(LD="$LD_WRAPPER")
+          else
+            MAKE_ARGS+=(LD=ld.lld)     
+          fi
           if [[ "$USE_LLVM_IAS" == "true" ]]; then
-            MAKE_ARGS=(LLVM_IAS=1 "${MAKE_ARGS[@]}")
+            MAKE_ARGS+=(LLVM_IAS=1)
           fi
           if [[ "$ENABLE_RUST" == "true" ]]; then
-            MAKE_ARGS=(RUSTC="$RUSTC_BIN" "${MAKE_ARGS[@]}")
+            MAKE_ARGS+=(RUSTC="$RUSTC_BIN")
           fi
 
-          make O=out "${MAKE_ARGS[@]}" gki_defconfig
+          make O=out "${MAKE_ARGS[@]}" gki_defconfig --no-print-directory
 
-          if [[ "$KERNEL_VERSION" == "5.10" || "$KERNEL_VERSION" == "5.15" ]]; then
-            echo ">> 设置 LTO = thin"
+          if [[ "$KERNEL_VERSION" == 5.* ]]; then
+            echo "# 设置 LTO = thin"
             scripts/config --file out/.config -e LTO_CLANG
             scripts/config --file out/.config -e LTO_CLANG_THIN
             scripts/config --file out/.config -d LTO_CLANG_NONE
@@ -1447,14 +1461,14 @@ jobs:
           fi
 
           if [[ "$KERNEL_VERSION" == "6.12" ]]; then
-            echo ">> 设置 LTO = none"
+            echo "# 设置 LTO = none"
             scripts/config --file out/.config -e LTO_CLANG
             scripts/config --file out/.config -e LTO_CLANG_NONE
             scripts/config --file out/.config -d LTO_CLANG_THIN
             scripts/config --file out/.config -d LTO_CLANG_FULL
           fi
 
-          make O=out "${MAKE_ARGS[@]}" olddefconfig
+          make O=out "${MAKE_ARGS[@]}" olddefconfig --no-print-directory
           make -j"$(nproc --all)" O=out "${MAKE_ARGS[@]}"
           ccache -s
 
@@ -1648,6 +1662,43 @@ jobs:
         with:
           name: ZRAM-Module_${{ env.KERNEL_VERSION }}_${{ steps.extract_info.outputs.value }}
           path: ZRAM-Module/*
+
+      - name: Check Cache Size Before Save
+        if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' }}
+        id: cache_size_check
+        run: |
+          check_size() {
+            local CACHE_DIR="$1"
+            local CACHE_NAME="$2"
+            if [[ ! -d "$CACHE_DIR" ]]; then
+              echo "${CACHE_NAME}_save=false" >> "$GITHUB_OUTPUT"
+              return
+            fi
+            SIZE_MB=$(du -sm "$CACHE_DIR" | cut -f1)
+            echo "$CACHE_DIR 大小: ${SIZE_MB}MB"
+            if (( SIZE_MB >= 5 )); then
+              echo "${CACHE_NAME}_save=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::warning title=Cache Warning::$CACHE_NAME 小于 5MB，跳过保存"
+              echo "${CACHE_NAME}_save=false" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          check_size "${{ env.CCACHE_DIR }}" "ccache"
+          check_size "${{ github.workspace }}/kernel_workspace/.thinlto-cache" "thinlto"
+
+      - name: Save Ccache
+        if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' && steps.cache_size_check.outputs.ccache_save == 'true' && steps.restore-ccache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-16.8
+
+      - name: Save ThinLTO Cache
+        if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' && github.event.inputs.FAST_BUILD == 'true' && steps.cache_size_check.outputs.thinlto_save == 'true' && steps.restore-thinlto.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ github.workspace }}/kernel_workspace/.thinlto-cache
+          key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-16.8
 
       - name: Post-build Disk Check
         run: df -h
